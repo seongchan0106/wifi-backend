@@ -87,3 +87,84 @@ def search_wifi(
 
     df = pd.read_sql(text(sql), engine, params=params)  # 완성된 SQL과 파라미터로 데이터 조회
     return df.to_dict(orient="records")  # 결과를 JSON 형태로 반환
+
+@app.get("/wifi/stats/summary")
+def get_summary():
+    sql = """
+    SELECT
+        COUNT(*) AS total_wifi_count,
+        COUNT(DISTINCT sido) AS total_sido_count,
+        COUNT(DISTINCT sigungu) AS total_sigungu_count
+    FROM public_wifi
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    """
+    df = pd.read_sql(sql, engine)
+    return df.iloc[0].to_dict()
+
+
+@app.get("/wifi/stats/sido")
+def get_sido_stats():
+    sql = """
+    SELECT
+        sido,
+        COUNT(*) AS count
+    FROM public_wifi
+    WHERE sido IS NOT NULL
+      AND sido <> ''
+      AND lat IS NOT NULL
+      AND lng IS NOT NULL
+    GROUP BY sido
+    ORDER BY count DESC
+    """
+    df = pd.read_sql(sql, engine)
+    return df.to_dict(orient="records")
+
+
+@app.get("/wifi/stats/sigungu-top10")
+def get_sigungu_top10():
+    sql = """
+    SELECT
+        sido,
+        sigungu,
+        COUNT(*) AS count
+    FROM public_wifi
+    WHERE sido IS NOT NULL
+      AND sido <> ''
+      AND sigungu IS NOT NULL
+      AND sigungu <> ''
+      AND lat IS NOT NULL
+      AND lng IS NOT NULL
+    GROUP BY sido, sigungu
+    ORDER BY count DESC
+    LIMIT 10
+    """
+    df = pd.read_sql(sql, engine)
+    df["region"] = df["sido"] + " " + df["sigungu"]
+    return df[["region", "count"]].to_dict(orient="records")
+
+
+@app.get("/wifi/heatmap")
+def get_heatmap(
+    sido: str = Query(default=""),
+    sigungu: str = Query(default="")
+):
+    sql = """
+    SELECT lat, lng
+    FROM public_wifi
+    WHERE lat IS NOT NULL AND lng IS NOT NULL
+    """
+    params = {}
+
+    if sido:
+        sql += " AND sido = :sido"
+        params["sido"] = sido
+
+    if sigungu:
+        sql += " AND sigungu = :sigungu"
+        params["sigungu"] = sigungu
+
+    df = pd.read_sql(text(sql), engine, params=params)
+
+    # leaflet heatmap용 [lat, lng, weight] 형태
+    heatmap_data = [[row["lat"], row["lng"], 1] for _, row in df.iterrows()]
+    return heatmap_data
